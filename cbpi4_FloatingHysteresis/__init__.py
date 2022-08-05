@@ -4,35 +4,51 @@ from asyncio import tasks
 import logging
 from cbpi.api import *
 
-@parameters([Property.Number(label="OffsetBefore50", configurable=True, description="Offset below target temp when heater should switched off"),
-             Property.Number(label="OffsetBefore60", configurable=True, description="Offset below target temp when heater should switched off"),
-             Property.Number(label="OffsetBefore70", configurable=True, description="Offset below target temp when heater should switched off"),
-             Property.Number(label="OffsetAfter70", configurable=True, description="Offset below target temp when heater should switched off")])
+@parameters([Property.Number(label="Offset_Before_50", configurable=True, description="Offset below target temp when heater should switched off"),
+             Property.Number(label="Offset_Before_60", configurable=True, description="Offset below target temp when heater should switched off"),
+             Property.Number(label="Offset_Before_70", configurable=True, description="Offset below target temp when heater should switched off"),
+             Property.Number(label="Offset_After_70", configurable=True, description="Offset below target temp when heater should switched off"),
+             Property.Number(label="Boil_Threshold", configurable=True, description="When this temperature is reached, power will be set to Max Boil Output (default: 98 °C/208 F)"),
+             Property.Number(label="Max_Boil_Output", configurable=True, default_value=85, description="Power when Boil Threshold is reached.")])
 class FloatingHysteresis(CBPiKettleLogic):
     
     async def run(self):
         try:
-            self.offset_50 = float(self.props.get("OffsetBefore50", 0))
-            self.offset_60 = float(self.props.get("OffsetBefore60", 0))
-            self.offset_70 = float(self.props.get("OffsetBefore70", 0))
-            self.offset_70plus = float(self.props.get("OffsetAfter70", 0))
-            self.kettle = self.get_kettle(self.id)
-            self.heater = self.kettle.heater
-            logging.info("FloatingHysteresis {} {} {} {} {} {}".format(self.offset_50, self.offset_60, self.offset_70, self.offset_70plus, self.id, self.heater))       
+            boilthreshold = 98 if self.get_config_value("TEMP_UNIT", "C") == "C" else 208
+            maxtempboil = float(self.props.get("Boil_Treshold", boilthreshold))
+            maxboilout = int(self.props.get("Max_Boil_Output", 100))
+            offset_50 = float(self.props.get("Offset_Before_50", 0))
+            offset_60 = float(self.props.get("Offset_Before_60", 0))
+            offset_70 = float(self.props.get("Offset_Before_70", 0))
+            offset_70plus = float(self.props.get("Offset_After_70", 0))
+            kettle = self.get_kettle(self.id)
+            heater = kettle.heater
+            heater_actor = self.cbpi.actor.find_by_id(heater)
+            logging.info("FloatingHysteresis {} {} {} {} {} {}".format(offset_50, offset_60, offset_70, offset_70plus, self.id, heater))       
 
             while self.running == True:
-                sensor_value = self.get_sensor_value(self.kettle.sensor).get("value")
+                heat_percent_old = 100
+                current_kettle_power= heater_actor.power
+                current_temp = self.get_sensor_value(kettle.sensor).get("value")
                 target_temp = self.get_kettle_target_temp(self.id)
-                if target_temp <= 50 and sensor_value >= target_temp - self.offset_50:
-                    await self.actor_off(self.heater)
-                elif target_temp <= 60 and sensor_value >= target_temp - self.offset_60:
-                    await self.actor_off(self.heater)
-                elif target_temp <= 70 and sensor_value >= target_temp - self.offset_70:
-                    await self.actor_off(self.heater)
-                elif sensor_value >= target_temp - self.offset_70plus:
-                    await self.actor_off(self.heater)
+                if current_temp >= float(maxtempboil):
+                    heat_percent = maxboilout
                 else:
-                    await self.actor_on(self.heater)
+                    heat_percent = 100
+                if (heat_percent_old != heat_percent) or (heat_percent != current_kettle_power):
+                    await self.actor_set_power(heater, heat_percent)
+                    heat_percent_old = heat_percent
+                    
+                if target_temp <= 50 and current_temp >= target_temp - offset_50:
+                    await self.actor_off(heater)
+                elif target_temp <= 60 and current_temp >= target_temp - offset_60:
+                    await self.actor_off(heater)
+                elif target_temp <= 70 and current_temp >= target_temp - offset_70:
+                    await self.actor_off(heater)
+                elif current_temp >= target_temp - offset_70plus:
+                    await self.actor_off(heater)
+                else:
+                    await self.actor_on(heater)
                 await asyncio.sleep(1)
 
         except asyncio.CancelledError as e:
@@ -41,9 +57,7 @@ class FloatingHysteresis(CBPiKettleLogic):
             logging.error("FloatingHysteresis Error {}".format(e))
         finally:
             self.running = False
-            await self.actor_off(self.heater)
-
-
+            await self.actor_off(self.get_kettle(self.id).heater)
 
 def setup(cbpi):
 
