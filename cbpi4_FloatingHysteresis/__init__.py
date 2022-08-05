@@ -8,8 +8,8 @@ from cbpi.api import *
              Property.Number(label="Offset_Before_60", configurable=True, description="Offset below target temp when heater should switched off"),
              Property.Number(label="Offset_Before_70", configurable=True, description="Offset below target temp when heater should switched off"),
              Property.Number(label="Offset_After_70", configurable=True, description="Offset below target temp when heater should switched off"),
-             Property.Number(label="Boil_Threshold", configurable=True, description="When this temperature is reached, power will be set to Boil Output"),
-             Property.Number(label="Boil_Output", configurable=True, default_value=85, description="Power when Boil Threshold is reached.")])
+             Property.Number(label="Boil_Threshold", configurable=True, default_value=98, description="When this temperature is reached, power will be set to Boil Output"),
+             Property.Number(label="Boil_Output", configurable=True, default_value=50, description="Power when Boil Threshold is reached.")])
 class FloatingHysteresis(CBPiKettleLogic):
     
     async def run(self):
